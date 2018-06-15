@@ -1,0 +1,196 @@
+https://wiki.osdev.org/GRUB
+
+
+History
+
+GRUB version 2 started its life as the PUPA (note the pun) research project and 
+was rewritten from the ground up. Since then GRUB 2 (actually at time of update 1.97) 
+has grown more stable and even hobby operating systems use of the new bootloader instead 
+of GRUB Legacy.
+
+Features 
+Basic scripting support 
+GUI (better bootsplash support, custom colors, custom themes, ...) 
+Memory management 
+Cleaner design 
+Better portability 
+Internationalization 
+Rescue mode 
+
+Upgrading from GRUB Legacy 
+WARNING: These steps have not been tested very well yet. Use at your own risk! 
+Since modern GRUB 2 is very different from GRUB Legacy, the directions for getting 
+your kernel up and running are different. Modern GRUB differs from GRUB Legacy in 
+that to implement all but the most basic functionality, the user must load so-called 
+"modules": little bits of code that add components (e.g. a different file system or a 
+VGA font). This section gives you an overview of the process you need to go through 
+when you want to have GRUB 2 load your kernel. It's actually rather simple to create 
+a GRUB 2 image (assuming you have GRUB 2 either built or installed):
+
+ISO instructions 
+There have been a lot of tries to make Grub2 work good with ISOs, but mostly failed. 
+The only combination of commands that seems to work is the following. 
+
+First create a directory tree called "iso", where you put your kernel (and any other 
+needed files) somewhere. Then in the boot/grub subdirectory create the grub.cfg file 
+which is your configuration.
+
+Now run: 
+
+grub-mkrescue -o bootable.iso iso
+
+Be sure that your grub.cfg is syntactically correct. A common mistake is to put the 
+menuentry brace on newline. It must be like:
+ 
+menuentry "Place your os name here" {
+}
+
+grub-mkrescue depends on program xorriso with version 0.5.6 or higher.
+ 
+If you cannot get it as binary (possibly from a package named "libisoburn") then get 
+the all-in-one source tarball from GNU xorriso homepage. GNU xorriso can be used where 
+it gets built, without further installation:
+ 
+ grub-mkrescue --xorriso=/...full.path.../xorriso/xorriso -o bootable.iso iso
+
+
+Floppy instructions
+ 
+mkdir tmp
+grub-mkimage -p /boot -o tmp/core.img multiboot sh fat # This should work... I hope :D
+
+Explanation 
+
+Let's go through those grub-mkimage options: 
+-p 	By default, GRUB 2 looks in /boot/grub for its configuration file. -p changes this. 
+-o 	Like so many other GNU tools, grub-mkimage uses -o to set the output file. By default, it's stdout. 
+multiboot 	This module is required to load multiboot-compliant kernels. 
+biosdisk 	This module is required for GRUB 2 to be able to boot from a LiveCD. 
+iso9660/fat 	Allows GRUB 2 to look on the image for different files. 
+sh 	This module allows GRUB to parse the configuration file. 
+
+GRUB 2, like GRUB Legacy, needs a configuration file to find your kernel. In GRUB Legacy 
+it's called menu.lst, but in GRUB2, it's called grub.cfg. The syntax for the configuration 
+file is also a bit different.
+
+Here's a sample configuration file (NOTE: This file should be placed into the /boot/grub folder 
+of your disk image, and be named grub.cfg): 
+
+set timeout=15
+set default=0 # Set the default menu entry
+ 
+menuentry "OS Name" {
+   multiboot /boot/kernel-file   # The multiboot command replaces the kernel command
+   boot
+}
+
+That's basically it. Copy these files to a disk image, pop it in an emulator, and you're done! 
+Double check that you put the brace on the same line of "menuentry". It can't be on a new line. 
+This is not C
+
+
+USB instructions 
+Fewer and fewer systems have a floppy disc controller these days, but USB ports are found on all. 
+Modern BIOSes can boot from a USB device, usually by pressing some special key during startup.
+ 
+Putting GRUB 2 on a bootable USB storage device is a nice way to experiment with your OS on different 
+computers. Here's how you set this up (using Linux):
+ 
+1. Create a FAT32-formatted USB disk, without partitions:
+ 
+Warning: the following command uses superuser privileges (sudo). E.g. just typing the wrong character 
+for X could cause severe troubles for your current system 
+
+sudo mkfs.vfat -F 32 -n YourLabel -I /dev/sdX
+(where sdX is your USB device) 
+The "-I" option is needed because we are targeting a partition-less device
+
+2. Remove your USB device, and plug it back in. The auto-mounter on your OS should detect it now.
+
+3. Invoke grub-install (on some systems this command is called grub2-install, located under 
+/usr/sbin or /usr/local/sbin)
+ 
+sudo grub-install --root-directory=/media/YourLabel --no-floppy --recheck --force /dev/sdX
+
+It is important to do this as root (or sudo), else the generated device.map listing available boot 
+devices can be empty. /media/YourLabel is the mount point under Fedora 16, it may be different for 
+other distributions.
+
+4. Create a grub.cfg for your kernel (see above), and copy it to your new bootable USB disk
+
+
+Disk image instructions 
+
+Hobby operating systems don't have to use real devices when running on virtual machines 
+(although it may be, and it usually is faster). Creating bootable GRUB disk image is 
+similar to installing it on USB devices, but here you're working with image itself and 
+partition device at once. 
+
+1. Create new disk image file 
+
+$ dd if=/dev/zero of=disk.img bs=512 count=131072
+131072+0 records in
+131072+0 records out
+67108864 bytes (67 MB) copied, 0.349436 s, 192 MB/s
+
+2. Create new DOS partition table with bootable entry for your filesystem 
+
+$ fdisk disk.img
+
+Add new partition, starting at 1MB (2048th sector). This is more space than GRUB actually needs.
+
+Command (m for help): n
+Partition type:
+   p   primary (0 primary, 0 extended, 4 free)
+   e   extended
+Select (default p): p
+Partition number (1-4, default 1): 1
+First sector (2048-131071, default 2048): 
+Using default value 2048
+Last sector, +sectors or +size{K,M,G} (2048-131071, default 131071): 
+Using default value 131071
+
+Make it bootable 
+
+Command (m for help): a 
+Partition number (1-4): 1
+
+Write the new partition table to disk
+
+Command (m for help): w
+The partition table has been altered!
+
+Syncing disks.
+
+3. Setup two loop devices. One will be used for writing GRUB and its additional 
+codes to MBR, and the second will be used for mounting filesystem of your operating system. 
+
+$ sudo losetup /dev/loop0 disk.img
+$ sudo losetup /dev/loop1 disk.img -o 1048576
+-o option defines offset from start of the file. Number 1048576 is actually 1024^2 = 1MB and 
+that's the start of your partition. 
+
+4. Format your partition You can simply use [any supported filesystem] like ext2 or FAT32. 
+
+$ sudo mke2fs /dev/loop1
+$ sudo mkdosfs -F32 -f 2 /dev/loop1
+
+5. Mount your newly formatted partition 
+$ sudo mount /dev/loop1 /mnt
+
+Note that if you tried to mount your first loop device which doesn't have any offset set, 
+you would be requested to specify filesystem and even if you did it, you wouldn't get the 
+expected result. 
+
+7. Install GRUB using grub-install 
+
+sudo grub-install --root-directory=/mnt --no-floppy --modules="normal part_msdos ext2 multiboot biosdev" /dev/loop0
+
+If you mistyped /dev/loop1 (pointing on your partition) instead of /dev/loop0 
+(pointing on your MBR), you would receive message that grub-install can't use 'embedding' 
+(because there's no space for it) and that it would like to use 'block lists', which are 
+not recomended. 
+Don't forget to flush the filesystem buffers when manipulating with files on mounted disk image. 
+On a Unix-like system, this can be simply done by executing the sync program in your shell
+
+ ¿
